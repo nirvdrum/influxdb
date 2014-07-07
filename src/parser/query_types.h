@@ -51,6 +51,10 @@ typedef struct groupby_clause_t {
 } groupby_clause;
 
 typedef struct {
+  value *timezone_function;
+} with_clause;
+
+typedef struct {
   int first_line;
   int first_column;
   int last_line;
@@ -88,6 +92,7 @@ typedef struct {
   value_array *c;
   from_clause *from_clause;
   groupby_clause *group_by;
+  with_clause *with_clause;
   into_clause *into_clause;
   condition *where_condition;
   int limit;
