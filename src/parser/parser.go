@@ -28,6 +28,10 @@ type IntoClause struct {
 	BackfillValue *Value
 }
 
+type WithClause struct {
+	TimezoneValue *Value
+}
+
 type BasicQuery struct {
 	startTime time.Time
 	endTime   time.Time
@@ -43,6 +47,7 @@ type SelectQuery struct {
 	SelectDeleteCommonQuery
 	ColumnNames   []*Value
 	groupByClause *GroupByClause
+	WithClause    *WithClause
 	IntoClause    *IntoClause
 	Limit         int
 	Ascending     bool
@@ -83,6 +88,16 @@ type Query struct {
 	ListQuery       *ListQuery
 	DropSeriesQuery *DropSeriesQuery
 	DropQuery       *DropQuery
+}
+
+func (self *WithClause) GetString() string {
+	buffer := bytes.NewBufferString("")
+
+	if self.TimezoneValue != nil {
+		fmt.Fprintf(buffer, " timezone(%s)", self.TimezoneValue.GetString())
+	}
+
+	return buffer.String()
 }
 
 func (self *IntoClause) GetString() string {
@@ -182,6 +197,10 @@ func (self *SelectQuery) commonGetQueryStringWithTimes(withTime, withIntoClause 
 	}
 	if self.GetGroupByClause() != nil && len(self.GetGroupByClause().Elems) > 0 {
 		fmt.Fprintf(buffer, " group by %s", self.GetGroupByClause().GetString())
+	}
+
+	if self.GetWithClause() != nil {
+		fmt.Fprintf(buffer, " with %s", self.GetWithClause().GetString())
 	}
 
 	if self.Limit > 0 {
@@ -292,6 +311,10 @@ func (self *SelectQuery) IsNonRecursiveContinuousQuery() bool {
 	}
 
 	return true
+}
+
+func (self *SelectQuery) GetWithClause() *WithClause {
+	return self.WithClause
 }
 
 func (self *SelectQuery) GetIntoClause() *IntoClause {
@@ -440,6 +463,36 @@ func GetFromClause(fromClause *C.from_clause) (*FromClause, error) {
 		return nil, err
 	}
 	return &FromClause{FromClauseType(fromClause.from_clause_type), arr}, nil
+}
+
+func GetWithClause(withClause *C.with_clause) (*WithClause, error) {
+	if withClause == nil {
+		return nil, nil
+	}
+
+	var timezoneValue *Value = nil
+
+	if withClause.timezone_function != nil {
+		fun, err := GetValue(withClause.timezone_function)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if fun.Name != "timezone" {
+			return nil, fmt.Errorf("You can't use %s with WITH clause", fun.Name)
+		}
+
+		if len(fun.Elems) != 1 {
+			return nil, fmt.Errorf("`timezone` accepts only one argument")
+		}
+
+		timezoneValue = fun.Elems[0]
+	}
+
+	return &WithClause{
+		TimezoneValue: timezoneValue,
+	}, nil
 }
 
 func GetIntoClause(intoClause *C.into_clause) (*IntoClause, error) {
@@ -719,6 +772,11 @@ func parseSelectQuery(q *C.select_query) (*SelectQuery, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	goQuery.WithClause, err = GetWithClause(q.with_clause)
+	if err != nil {
+		return goQuery, err
 	}
 
 	// get the into clause

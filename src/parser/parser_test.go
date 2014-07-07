@@ -84,8 +84,12 @@ func (self *QueryParserSuite) TestGetQueryString(c *C) {
 		"select count(value) from t group by time(1h) into value.hourly",
 		"select count(value), host from t group by time(1h), host into value.hourly.[:host]",
 		"select count(value), host from t group by time(1h), host where time > now() - 1h into value.hourly.[:host]",
+		"select count(value), host from t group by time(1h), host with timezone('-5') into value.hourly.[:host]",
+		"select count(value), host from t group by time(1h), host where time > now() - 1h with timezone('-5') into value.hourly.[:host]",
 		"select count(value), host from t group by time(1h), host into value.hourly.[:host] backfill(F)",
 		"select count(value), host from t group by time(1h), host where time > now() - 1h into value.hourly.[:host] backfill(true)",
+		"select count(value), host from t group by time(1h), host with timezone('-5')into value.hourly.[:host] backfill(F)",
+		"select count(value), host from t group by time(1h), host where time > now() - 1h with timezone('-5') into value.hourly.[:host] backfill(true)",
 		"select count(value) from t, host into value.hourly.[:host] backfill(1)",
 		"delete from foo",
 	} {
@@ -958,6 +962,25 @@ func (self *QueryParserSuite) TestQueryParenthesesValueShouldSupportAliases(c *C
 	column2 := q.GetColumnNames()[1]
 	c.Assert(column2.Elems, HasLen, 2)
 	c.Assert(column2.Alias, Equals, "arithmetic_result2")
+}
+
+func (self *QueryParserSuite) TestInvalidWithClause(c *C) {
+	_, err := ParseQuery("select * from foo group by time(1d) with something_bad;")
+	c.Assert(err, NotNil)
+
+	_, err = ParseQuery("select * from foo group by time(1d) with timezone('one');")
+	c.Assert(err, IsNil)
+}
+
+func (self *QueryParserSuite) TestLogicallyInvalidWithClause(c *C) {
+	_, err := ParseSelectQuery("select * from foo group by time(1d) with something_bad();")
+	c.Assert(err, NotNil)
+
+	_, err = ParseSelectQuery("select * from foo group by time(1d) with timezone('-5', '+3');")
+	c.Assert(err, NotNil)
+
+	_, err = ParseSelectQuery("select * from foo group by time(1d) with timezone('-5');")
+	c.Assert(err, IsNil)
 }
 
 // TODO:
